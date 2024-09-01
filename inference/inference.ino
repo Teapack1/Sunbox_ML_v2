@@ -1,117 +1,114 @@
-#include <Adafruit_APDS9960.h>
+/**
+ * Run a TensorFlow model to predict the IRIS dataset
+ * For a complete guide, visit
+ * https://eloquentarduino.com/tensorflow-lite-esp32
+ */
 #include <driver/ledc.h>
-#include <TensorFlowLite.h>
-#include <tensorflow/lite/experimental/micro/kernels/activations.h>
-#include <tensorflow/lite/experimental/micro/kernels/fully_connected.h>
-#include <tensorflow/lite/experimental/micro/kernels/memory.h>
-#include <tensorflow/lite/experimental/micro/kernels/quantize.h>
-#include <tensorflow/lite/experimental/micro/kernels/transpose.h>
-#include <tensorflow/lite/experimental/micro/kernels/mean.h>
-#include <tensorflow/lite/experimental/micro/kernels/multi_head_attention.h>
-#include <tensorflow/lite/experimental/micro/kernels/unary.h>
-#include <tensorflow/lite/experimental/micro/kernels/batch_norm.h>
-#include <tensorflow/lite/experimental/micro/kernels/concat.h>
-#include <tensorflow/lite/experimental/micro/kernels/expand_dims.h>
-#include <tensorflow/lite/experimental/micro/kernels/split.h>
-#include <tensorflow/lite/experimental/micro/kernels/softmax.h>
+#include "LED_200.h"
+#include <tflm_esp32.h>
+#include <eloquent_tinyml.h>
+#include <Adafruit_APDS9960.h>
 
-// Define the TensorFlow Lite model
-extern "C" const uint8_t model_tflite_start[] asm("_binary_model_tflite_start");
-extern "C" const uint8_t model_tflite_end[] asm("_binary_model_tflite_end");
+// this is trial-and-error process
+// when developing a new model, start with a high value
+// (e.g. 10000), then decrease until the model stops
+// working as expected
+#define ARENA_SIZE 4096
 
-const int pwmFreq = 1000;
-const int pwmResolution = 8;
-const int pwmChannelCW = 0;
-const int pwmChannelWW = 1;
-
-const int pinCW = 32;
-const int pinWW = 35;
-
+Eloquent::TF::Sequential<TF_NUM_OPS, ARENA_SIZE> tf;
 Adafruit_APDS9960 apds;
-tflite::MicroInterpreter* interpreter;
-tflite::Model* model;
-tflite::MicroMutableOpResolver<10> micro_op_resolver;
-tflite::MicroErrorReporter micro_error_reporter;
-tflite::MicroInterpreter* interpreter;
-TfLiteTensor* input_tensor;
-TfLiteTensor* output_tensor;
+
+
+// Define PWM settings
+const int pwmFreq = 1000;  // Frequency of PWM
+const int pwmResolution = 8;  // 8-bit resolution (0-255)
+const int pwmChannelCW = 0;  // Channel for Cool White LED
+const int pwmChannelWW = 1;  // Channel for Warm White LED
+
+const int pinCW = 32;  // GPIO for Cool White LED
+const int pinWW = 35;  // GPIO for Warm White LED
+
 
 void setup() {
-  Serial.begin(115200);
+    Serial.begin(115200);
+    registerNetworkOps(tf);
+    
+    delay(3000);
+    Serial.println("__TENSORFLOW ESP32 RGBW CONTROL__");
 
-  // Initialize the APDS9960 sensor
-  if (!apds.begin()) {
-    Serial.println("Failed to initialize device! Please check your wiring.");
-    while (1);
-  }
-  Serial.println("Device initialized!");
+    // Initialize the APDS9960 sensor
+    if (!apds.begin()) {
+        Serial.println("Failed to initialize device! Please check your wiring.");
+        while (1);
+    }
+    Serial.println("Device initialized!");    
+    // Enable color sensing
+    apds.enableColor(true);
+    
+    // Set up PWM for Cool White and Warm White LEDs using the new `ledcAttach` function
+    ledcAttach(pinCW, pwmFreq, pwmResolution);
+    ledcAttach(pinWW, pwmFreq, pwmResolution);
 
-  // Set up PWM for Cool White and Warm White LEDs
-  ledcSetup(pwmChannelCW, pwmFreq, pwmResolution);
-  ledcSetup(pwmChannelWW, pwmFreq, pwmResolution);
-  ledcAttachPin(pinCW, pwmChannelCW);
-  ledcAttachPin(pinWW, pwmChannelWW);
 
-  // Initialize TensorFlow Lite
-  model = tflite::GetModel(model_tflite_start);
-  if (model->version() != TFLITE_SCHEMA_VERSION) {
-    Serial.println("Model version is not supported.");
-    while (1);
-  }
-
-  // Set up the interpreter
-  micro_op_resolver.AddFullyConnected();
-  micro_op_resolver.AddSoftmax();
-  // Add other operators as needed
-
-  static tflite::MicroInterpreter static_interpreter(model, micro_op_resolver, tensor_arena, kTensorArenaSize, &micro_error_reporter);
-  interpreter = &static_interpreter;
-
-  interpreter->AllocateTensors();
-  input_tensor = interpreter->input(0);
-  output_tensor = interpreter->output(0);
+    // configure input/output
+    // (not mandatory if you generated the .h model
+    // using the everywhereml Python package)
+    tf.setNumInputs(TF_NUM_INPUTS);
+    tf.setNumOutputs(TF_NUM_OUTPUTS);
+    // add required ops
+    // (not mandatory if you generated the .h model
+    // using the everywhereml Python package)
+    tf.resolver.AddFullyConnected();
+  
+    while (!tf.begin(tfModel).isOk()) 
+        Serial.println(tf.exception.toString());
+        delay(1000);  // Retry every second
 }
 
+
 void loop() {
-  // Wait for color data to be ready
-  while (!apds.colorDataReady()) {
-    delay(5);
-  }
 
-  // Get the color data from the sensor
-  uint16_t r, g, b, c;
-  apds.getColorData(&r, &g, &b, &c);
+        // Wait for sensor data to be ready
+    while (!apds.colorDataReady()) {
+        delay(5);
+    }
 
-  // Normalize the color data (example normalization)
-  float input_data[4] = { (float)r / 65535.0, (float)g / 65535.0, (float)b / 65535.0, (float)c / 65535.0 };
+    // Get the color data from the sensor
+    uint16_t r, g, b, w;
+    apds.getColorData(&r, &g, &b, &w);
 
-  // Set the input tensor
-  memcpy(input_tensor->data.f, input_data, sizeof(input_data));
+    
+    // Prepare input for the model
+    float input[4] = { (float)r, (float)g, (float)b, (float)w };
 
-  // Run inference
-  if (interpreter->Invoke() != kTfLiteOk) {
-    Serial.println("Failed to invoke the model.");
-    return;
-  }
+    // classify class 0
+    if (!tf.predict(input).isOk()) {
+        Serial.println(tf.exception.toString());
+        return;
+    }
 
-  // Get the output tensor
-  float control_value = output_tensor->data.f[0];
+        // Retrieve the predicted control value
+    float control_value = tf.output(0);
 
-  // Map control_value to PWM values
-  int pwmValueCW = (1.0 - control_value) * 255;  // Inverse mapping for Cool White
-  int pwmValueWW = control_value * 255;          // Direct mapping for Warm White
+    
+    // Map control_value to PWM values
+    int pwmValueCW = (1.0 - control_value) * 255;  // Inverse mapping for Cool White
+    int pwmValueWW = control_value * 255;          // Direct mapping for Warm White
 
-  // Set PWM duty cycles
-  ledcWrite(pwmChannelCW, pwmValueCW);
-  ledcWrite(pwmChannelWW, pwmValueWW);
+    // Set PWM duty cycles
+    ledcWrite(pwmChannelCW, pwmValueCW);
+    ledcWrite(pwmChannelWW, pwmValueWW);
+    
+    // Print the sensor data and control value
+    Serial.printf("R: %d, G: %d, B: %d, W: %d -> Control Value: %.3f\n", r, g, b, w, control_value);
 
-  // Print the results
-  Serial.print("Control Value: ");
-  Serial.print(control_value);
-  Serial.print(" PWM CW: ");
-  Serial.print(pwmValueCW);
-  Serial.print(" PWM WW: ");
-  Serial.println(pwmValueWW);
+    // Small delay to avoid overwhelming the serial output
+    delay(500);
 
-  delay(500);  // Adjust delay as needed
+    // how long does it take to run a single prediction?
+    Serial.print("It takes ");
+    Serial.print(tf.benchmark.microseconds());
+    Serial.println("us for a single prediction");
+    
+    delay(500);
 }

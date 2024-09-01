@@ -27,11 +27,8 @@ void setup() {
   apds.enableColor(true);
 
   // Set up PWM for Cool White and Warm White LEDs
-  ledcSetup(pwmChannelCW, pwmFreq, pwmResolution);
-  ledcSetup(pwmChannelWW, pwmFreq, pwmResolution);
-
-  ledcAttachPin(pinCW, pwmChannelCW);
-  ledcAttachPin(pinWW, pwmChannelWW);
+    ledcAttach(pinCW, pwmFreq, pwmResolution);
+    ledcAttach(pinWW, pwmFreq, pwmResolution);
 }
 
 void loop() {
@@ -66,6 +63,6 @@ void loop() {
     Serial.println(c);
 
     // Small delay to avoid overwhelming the serial output
-    delay(250);
+    delay(10);
   }
 }
