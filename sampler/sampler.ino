@@ -11,7 +11,7 @@ const int pwmChannelCW = 0;  // Channel for Cool White LED
 const int pwmChannelWW = 1;  // Channel for Warm White LED
 
 const int pinCW = 32;  // GPIO for Cool White LED
-const int pinWW = 35;  // GPIO for Warm White LED
+const int pinWW = 25;  // GPIO for Warm White LED
 
 void setup() {
   Serial.begin(115200);
@@ -27,24 +27,24 @@ void setup() {
   apds.enableColor(true);
 
   // Set up PWM for Cool White and Warm White LEDs
-    ledcAttach(pinCW, pwmFreq, pwmResolution);
-    ledcAttach(pinWW, pwmFreq, pwmResolution);
+  ledcAttach(pinCW, pwmFreq, pwmResolution);
+  ledcAttach(pinWW, pwmFreq, pwmResolution);
 }
 
 void loop() {
-  // Iterate over control values from 0.000 to 1.000 in steps of 0.001
+  // Increase control_value from 0.000 to 1.000
   for (float control_value = 0.000; control_value <= 1.000; control_value += 0.001) {
     // Map control_value to PWM values
     int pwmValueCW = (1.0 - control_value) * 255;  // Inverse mapping for Cool White
     int pwmValueWW = control_value * 255;          // Direct mapping for Warm White
 
     // Set PWM duty cycles
-    ledcWrite(pwmChannelCW, pwmValueCW);
-    ledcWrite(pwmChannelWW, pwmValueWW);
+    ledcWrite(pinCW, pwmValueCW);
+    ledcWrite(pinWW, pwmValueWW);
 
     // Wait for sensor data to be ready
     while (!apds.colorDataReady()) {
-      delay(5);
+      delay(1);
     }
 
     // Get the color data from the sensor
@@ -63,6 +63,40 @@ void loop() {
     Serial.println(c);
 
     // Small delay to avoid overwhelming the serial output
-    delay(10);
+    delay(1);
+  }
+
+  // Decrease control_value from 1.000 back to 0.000
+  for (float control_value = 1.000; control_value >= 0.000; control_value -= 0.001) {
+    // Map control_value to PWM values
+    int pwmValueCW = (1.0 - control_value) * 255;  // Inverse mapping for Cool White
+    int pwmValueWW = control_value * 255;          // Direct mapping for Warm White
+
+    // Set PWM duty cycles
+    ledcWrite(pinCW, pwmValueCW);
+    ledcWrite(pinWW, pwmValueWW);
+
+    // Wait for sensor data to be ready
+    while (!apds.colorDataReady()) {
+      delay(1);
+    }
+
+    // Get the color data from the sensor
+    uint16_t r, g, b, c;
+    apds.getColorData(&r, &g, &b, &c);
+
+    // Print the control value and sensor data
+    Serial.print(control_value, 3);  // Print control value with 3 decimal places
+    Serial.print(",");
+    Serial.print(r);
+    Serial.print(",");
+    Serial.print(g);
+    Serial.print(",");
+    Serial.print(b);
+    Serial.print(",");
+    Serial.println(c);
+
+    // Small delay to avoid overwhelming the serial output
+    delay(1);
   }
 }
