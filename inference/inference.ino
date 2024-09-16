@@ -26,7 +26,7 @@ const int pwmChannelCW = 0;  // Channel for Cool White LED
 const int pwmChannelWW = 1;  // Channel for Warm White LED
 
 const int pinCW = 32;  // GPIO for Cool White LED
-const int pinWW = 35;  // GPIO for Warm White LED
+const int pinWW = 25;  // GPIO for Warm White LED
 
 
 void setup() {
@@ -96,19 +96,19 @@ void loop() {
     int pwmValueWW = control_value * 255;          // Direct mapping for Warm White
 
     // Set PWM duty cycles
-    ledcWrite(pwmChannelCW, pwmValueCW);
-    ledcWrite(pwmChannelWW, pwmValueWW);
+    ledcWrite(pinCW, pwmValueCW);
+    ledcWrite(pinWW, pwmValueWW);
     
     // Print the sensor data and control value
     Serial.printf("R: %d, G: %d, B: %d, W: %d -> Control Value: %.3f\n", r, g, b, w, control_value);
 
     // Small delay to avoid overwhelming the serial output
-    delay(500);
+    delay(20);
 
     // how long does it take to run a single prediction?
     Serial.print("It takes ");
     Serial.print(tf.benchmark.microseconds());
     Serial.println("us for a single prediction");
     
-    delay(500);
+    delay(20);
 }
