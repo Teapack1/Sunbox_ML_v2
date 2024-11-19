@@ -1,32 +1,70 @@
-#include <Adafruit_APDS9960.h>
-#include <driver/ledc.h>
-
-// Create an instance of the sensor
-Adafruit_APDS9960 apds;
+#include <Wire.h>
+#include <Adafruit_VCNL4040.h>
+#include "veml6040.h"
+#include <driver/ledc.h>  // Necessary for PWM handling
 
 // Define PWM settings
-const int pwmFreq = 1000;  // Frequency of PWM
-const int pwmResolution = 8;  // 8-bit resolution (0-255)
-const int pwmChannelCW = 0;  // Channel for Cool White LED
-const int pwmChannelWW = 1;  // Channel for Warm White LED
+const int pwmFreq = 1000;    // Frequency of PWM
+const int pwmResolution = 8; // 8-bit resolution (0-255)
 
-const int pinCW = 32;  // GPIO for Cool White LED
-const int pinWW = 25;  // GPIO for Warm White LED
+// Update PWM pins to output-capable GPIOs
+const int pinCW = 18;        // GPIO for Cool White LED
+const int pinWW = 19;        // GPIO for Warm White LED
+
+// Define two I2C buses
+TwoWire I2C_0 = TwoWire(0);  // I2C bus for U1 and LS-B (Pins SDA_0=21, SCL_0=22)
+TwoWire I2C_1 = TwoWire(1);  // I2C bus for LS-A (Pins SDA_1=25, SCL_1=26)
+
+// Create instances of the sensors
+Adafruit_VCNL4040 vcnl4040;    // Sensor U1
+VEML6040 veml6040_LSB(&I2C_0); // Sensor LS-B on I2C_0
+VEML6040 veml6040_LSA(&I2C_1); // Sensor LS-A on I2C_1
 
 void setup() {
   Serial.begin(115200);
 
-  // Initialize the APDS9960 sensor
-  if (!apds.begin()) {
-    Serial.println("Failed to initialize device! Please check your wiring.");
+  // Initialize I2C buses
+  I2C_0.begin(21, 22);  // SDA_0, SCL_0
+  I2C_1.begin(25, 26);  // SDA_1, SCL_1
+
+  // Set I2C clock speed
+  I2C_0.setClock(100000);
+  I2C_1.setClock(100000);
+
+  // Adding delay to ensure bus stability
+  delay(500);
+
+  // Initialize VCNL4040 sensor on I2C_0
+  Serial.println("Initializing VCNL4040 (U1) sensor...");
+  if (!vcnl4040.begin(VCNL4040_I2CADDR_DEFAULT, &I2C_0)) {
+    Serial.println("Failed to initialize VCNL4040 (U1) sensor! Please check your wiring.");
     while (1);
   }
-  Serial.println("Device initialized!");
+  Serial.println("VCNL4040 (U1) initialized!");
 
-  // Enable color sensing
-  apds.enableColor(true);
+  // Initialize VEML6040 sensor LS-B on I2C_0
+  Serial.println("Initializing VEML6040 (LS-B) sensor...");
+  if (!veml6040_LSB.begin()) {
+    Serial.println("Failed to initialize VEML6040 (LS-B) sensor! Please check your wiring.");
+    while (1);
+  }
+  Serial.println("VEML6040 (LS-B) initialized!");
 
-  // Set up PWM for Cool White and Warm White LEDs
+  // Set configuration for LS-B
+  veml6040_LSB.setConfiguration(VEML6040_IT_160MS | VEML6040_TRIG_DISABLE | VEML6040_AF_AUTO | VEML6040_SD_ENABLE);
+
+  // Initialize VEML6040 sensor LS-A on I2C_1
+  Serial.println("Initializing VEML6040 (LS-A) sensor...");
+  if (!veml6040_LSA.begin()) {
+    Serial.println("Failed to initialize VEML6040 (LS-A) sensor! Please check your wiring.");
+    while (1);
+  }
+  Serial.println("VEML6040 (LS-A) initialized!");
+
+  // Set configuration for LS-A
+  veml6040_LSA.setConfiguration(VEML6040_IT_160MS | VEML6040_TRIG_DISABLE | VEML6040_AF_AUTO | VEML6040_SD_ENABLE);
+
+  // Set up PWM for Cool White and Warm White LEDs using updated ledc functions
   ledcAttach(pinCW, pwmFreq, pwmResolution);
   ledcAttach(pinWW, pwmFreq, pwmResolution);
 }
@@ -38,32 +76,66 @@ void loop() {
     int pwmValueCW = (1.0 - control_value) * 255;  // Inverse mapping for Cool White
     int pwmValueWW = control_value * 255;          // Direct mapping for Warm White
 
-    // Set PWM duty cycles
+    // Set PWM duty cycles using updated ledcWrite function
     ledcWrite(pinCW, pwmValueCW);
     ledcWrite(pinWW, pwmValueWW);
 
-    // Wait for sensor data to be ready
-    while (!apds.colorDataReady()) {
-      delay(1);
-    }
+    // Delay to allow sensors to integrate light
+    delay(160); // Delay matching the integration time
 
-    // Get the color data from the sensor
-    uint16_t r, g, b, c;
-    apds.getColorData(&r, &g, &b, &c);
+    // Get sensor data from VCNL4040 (U1)
+    uint16_t proximity = vcnl4040.getProximity();
+    uint16_t ambient = vcnl4040.getLux();
+
+    // Get sensor data from VEML6040 (LS-B) on I2C_0
+    uint16_t red_LSB = veml6040_LSB.getRed();
+    uint16_t green_LSB = veml6040_LSB.getGreen();
+    uint16_t blue_LSB = veml6040_LSB.getBlue();
+    uint16_t white_LSB = veml6040_LSB.getWhite();
+    uint16_t cct_LSB = veml6040_LSB.getCCT();
+    float lux_LSB = veml6040_LSB.getAmbientLight();
+
+    // Get sensor data from VEML6040 (LS-A) on I2C_1
+    uint16_t red_LSA = veml6040_LSA.getRed();
+    uint16_t green_LSA = veml6040_LSA.getGreen();
+    uint16_t blue_LSA = veml6040_LSA.getBlue();
+    uint16_t white_LSA = veml6040_LSA.getWhite();
+    uint16_t cct_LSA = veml6040_LSA.getCCT();
+    float lux_LSA = veml6040_LSA.getAmbientLight();
 
     // Print the control value and sensor data
     Serial.print(control_value, 3);  // Print control value with 3 decimal places
     Serial.print(",");
-    Serial.print(r);
+    Serial.print(proximity);
     Serial.print(",");
-    Serial.print(g);
+    Serial.print(ambient);
     Serial.print(",");
-    Serial.print(b);
+    Serial.print(red_LSB);
     Serial.print(",");
-    Serial.println(c);
+    Serial.print(green_LSB);
+    Serial.print(",");
+    Serial.print(blue_LSB);
+    Serial.print(",");
+    Serial.print(white_LSB);
+    Serial.print(",");
+    Serial.print(cct_LSB);
+    Serial.print(",");
+    Serial.print(lux_LSB, 2);
+    Serial.print(",");
+    Serial.print(red_LSA);
+    Serial.print(",");
+    Serial.print(green_LSA);
+    Serial.print(",");
+    Serial.print(blue_LSA);
+    Serial.print(",");
+    Serial.print(white_LSA);
+    Serial.print(",");
+    Serial.print(cct_LSA);
+    Serial.print(",");
+    Serial.println(lux_LSA, 2);
 
     // Small delay to avoid overwhelming the serial output
-    delay(1);
+    delay(10);
   }
 
   // Decrease control_value from 1.000 back to 0.000
@@ -72,31 +144,65 @@ void loop() {
     int pwmValueCW = (1.0 - control_value) * 255;  // Inverse mapping for Cool White
     int pwmValueWW = control_value * 255;          // Direct mapping for Warm White
 
-    // Set PWM duty cycles
+    // Set PWM duty cycles using updated ledcWrite function
     ledcWrite(pinCW, pwmValueCW);
     ledcWrite(pinWW, pwmValueWW);
 
-    // Wait for sensor data to be ready
-    while (!apds.colorDataReady()) {
-      delay(1);
-    }
+    // Delay to allow sensors to integrate light
+    delay(160); // Delay matching the integration time
 
-    // Get the color data from the sensor
-    uint16_t r, g, b, c;
-    apds.getColorData(&r, &g, &b, &c);
+    // Get sensor data from VCNL4040 (U1)
+    uint16_t proximity = vcnl4040.getProximity();
+    uint16_t ambient = vcnl4040.getLux();
+
+    // Get sensor data from VEML6040 (LS-B) on I2C_0
+    uint16_t red_LSB = veml6040_LSB.getRed();
+    uint16_t green_LSB = veml6040_LSB.getGreen();
+    uint16_t blue_LSB = veml6040_LSB.getBlue();
+    uint16_t white_LSB = veml6040_LSB.getWhite();
+    uint16_t cct_LSB = veml6040_LSB.getCCT();
+    float lux_LSB = veml6040_LSB.getAmbientLight();
+
+    // Get sensor data from VEML6040 (LS-A) on I2C_1
+    uint16_t red_LSA = veml6040_LSA.getRed();
+    uint16_t green_LSA = veml6040_LSA.getGreen();
+    uint16_t blue_LSA = veml6040_LSA.getBlue();
+    uint16_t white_LSA = veml6040_LSA.getWhite();
+    uint16_t cct_LSA = veml6040_LSA.getCCT();
+    float lux_LSA = veml6040_LSA.getAmbientLight();
 
     // Print the control value and sensor data
     Serial.print(control_value, 3);  // Print control value with 3 decimal places
     Serial.print(",");
-    Serial.print(r);
+    Serial.print(proximity);
     Serial.print(",");
-    Serial.print(g);
+    Serial.print(ambient);
     Serial.print(",");
-    Serial.print(b);
+    Serial.print(red_LSB);
     Serial.print(",");
-    Serial.println(c);
+    Serial.print(green_LSB);
+    Serial.print(",");
+    Serial.print(blue_LSB);
+    Serial.print(",");
+    Serial.print(white_LSB);
+    Serial.print(",");
+    Serial.print(cct_LSB);
+    Serial.print(",");
+    Serial.print(lux_LSB, 2);
+    Serial.print(",");
+    Serial.print(red_LSA);
+    Serial.print(",");
+    Serial.print(green_LSA);
+    Serial.print(",");
+    Serial.print(blue_LSA);
+    Serial.print(",");
+    Serial.print(white_LSA);
+    Serial.print(",");
+    Serial.print(cct_LSA);
+    Serial.print(",");
+    Serial.println(lux_LSA, 2);
 
     // Small delay to avoid overwhelming the serial output
-    delay(1);
+    delay(10);
   }
 }
