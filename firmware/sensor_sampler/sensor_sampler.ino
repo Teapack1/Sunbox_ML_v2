@@ -1,15 +1,16 @@
+#include <veml6040_sunbox.h>
 #include <Wire.h>
 #include <Adafruit_VCNL4040.h>
-#include "veml6040.h"
 #include <driver/ledc.h>  // Necessary for PWM handling
 
 // Define PWM settings
-const int pwmFreq = 1000;    // Frequency of PWM
-const int pwmResolution = 8; // 8-bit resolution (0-255)
+const int pwmFreq = 10000;    // Frequency of PWM
+const int pwmResolution = 8; // 8-bit resolution (0-1024)
 
 // Update PWM pins to output-capable GPIOs
-const int pinCW = 18;        // GPIO for Cool White LED
-const int pinWW = 19;        // GPIO for Warm White LED
+const int pinCW = 32;        // GPIO for Cool White LED
+const int pinWW = 35;        // GPIO for Warm White LED
+const int distLED = 16;
 
 // Define two I2C buses
 TwoWire I2C_0 = TwoWire(0);  // I2C bus for U1 and LS-B (Pins SDA_0=21, SCL_0=22)
@@ -17,10 +18,13 @@ TwoWire I2C_1 = TwoWire(1);  // I2C bus for LS-A (Pins SDA_1=25, SCL_1=26)
 
 // Create instances of the sensors
 Adafruit_VCNL4040 vcnl4040;    // Sensor U1
-VEML6040 veml6040_LSB(&I2C_0); // Sensor LS-B on I2C_0
-VEML6040 veml6040_LSA(&I2C_1); // Sensor LS-A on I2C_1
+VEML6040_Sunbox veml6040_LSB(&I2C_0); // Sensor LS-B on I2C_0
+VEML6040_Sunbox veml6040_LSA(&I2C_1); // Sensor LS-A on I2C_1
 
 void setup() {
+   pinMode(distLED, OUTPUT);
+  digitalWrite(distLED, LOW);
+  
   Serial.begin(115200);
 
   // Initialize I2C buses
@@ -51,7 +55,7 @@ void setup() {
   Serial.println("VEML6040 (LS-B) initialized!");
 
   // Set configuration for LS-B
-  veml6040_LSB.setConfiguration(VEML6040_IT_160MS | VEML6040_TRIG_DISABLE | VEML6040_AF_AUTO | VEML6040_SD_ENABLE);
+  veml6040_LSB.setConfiguration(VEML6040_IT_40MS | VEML6040_TRIG_DISABLE | VEML6040_AF_AUTO | VEML6040_SD_ENABLE);
 
   // Initialize VEML6040 sensor LS-A on I2C_1
   Serial.println("Initializing VEML6040 (LS-A) sensor...");
@@ -62,7 +66,7 @@ void setup() {
   Serial.println("VEML6040 (LS-A) initialized!");
 
   // Set configuration for LS-A
-  veml6040_LSA.setConfiguration(VEML6040_IT_160MS | VEML6040_TRIG_DISABLE | VEML6040_AF_AUTO | VEML6040_SD_ENABLE);
+  veml6040_LSA.setConfiguration(VEML6040_IT_40MS | VEML6040_TRIG_DISABLE | VEML6040_AF_AUTO | VEML6040_SD_ENABLE);
 
   // Set up PWM for Cool White and Warm White LEDs using updated ledc functions
   ledcAttach(pinCW, pwmFreq, pwmResolution);
@@ -70,18 +74,19 @@ void setup() {
 }
 
 void loop() {
+  
   // Increase control_value from 0.000 to 1.000
   for (float control_value = 0.000; control_value <= 1.000; control_value += 0.001) {
     // Map control_value to PWM values
-    int pwmValueCW = (1.0 - control_value) * 255;  // Inverse mapping for Cool White
-    int pwmValueWW = control_value * 255;          // Direct mapping for Warm White
+    int pwmValueCW = (1.0 - control_value) * 256;  // Inverse mapping for Cool White
+    int pwmValueWW = control_value * 256;          // Direct mapping for Warm White
 
     // Set PWM duty cycles using updated ledcWrite function
     ledcWrite(pinCW, pwmValueCW);
     ledcWrite(pinWW, pwmValueWW);
 
     // Delay to allow sensors to integrate light
-    delay(160); // Delay matching the integration time
+    delay(40); // Delay matching the integration time
 
     // Get sensor data from VCNL4040 (U1)
     uint16_t proximity = vcnl4040.getProximity();
@@ -149,7 +154,7 @@ void loop() {
     ledcWrite(pinWW, pwmValueWW);
 
     // Delay to allow sensors to integrate light
-    delay(160); // Delay matching the integration time
+    delay(40); // Delay matching the integration time
 
     // Get sensor data from VCNL4040 (U1)
     uint16_t proximity = vcnl4040.getProximity();

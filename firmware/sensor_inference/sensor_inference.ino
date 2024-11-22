@@ -1,6 +1,6 @@
+#include <veml6040_sunbox.h>
 #include <Wire.h>
 #include <Adafruit_VCNL4040.h>
-#include "veml6040.h"
 #include <tflm_esp32.h>
 #include <eloquent_tinyml.h>
 #include <driver/ledc.h>
@@ -9,7 +9,7 @@
 #include "tf_model.h"  // Replace with your actual model header file
 
 // Define the arena size for TensorFlow Lite Micro
-#define ARENA_SIZE 8192  // Adjust based on your model's requirements
+#define ARENA_SIZE 4096  // Adjust based on your model's requirements
 
 // Initialize the EloquentTinyML model
 Eloquent::TF::Sequential<TF_NUM_OPS, ARENA_SIZE> tf;
@@ -19,8 +19,9 @@ const int pwmFreq = 1000;    // Frequency of PWM
 const int pwmResolution = 8; // 8-bit resolution (0-255)
 
 // Define PWM pins
-const int pinCW = 18;        // GPIO for Cool White LED
-const int pinWW = 19;        // GPIO for Warm White LED
+const int pinCW = 32;        // GPIO for Cool White LED
+const int pinWW = 35;        // GPIO for Warm White LED
+const int distLED = 16;
 
 // Define two I2C buses
 TwoWire I2C_0 = TwoWire(0);  // I2C bus for U1 and LS-B (Pins SDA_0=21, SCL_0=22)
@@ -28,8 +29,8 @@ TwoWire I2C_1 = TwoWire(1);  // I2C bus for LS-A (Pins SDA_1=25, SCL_1=26)
 
 // Create instances of the sensors
 Adafruit_VCNL4040 vcnl4040;    // Sensor U1
-VEML6040 veml6040_LSB(&I2C_0); // Sensor LS-B on I2C_0
-VEML6040 veml6040_LSA(&I2C_1); // Sensor LS-A on I2C_1
+VEML6040_Sunbox veml6040_LSB(&I2C_0); // Sensor LS-B on I2C_0
+VEML6040_Sunbox veml6040_LSA(&I2C_1); // Sensor LS-A on I2C_1
 
 // Define the number of input features
 #define NUM_FEATURES 14
@@ -37,21 +38,22 @@ VEML6040 veml6040_LSA(&I2C_1); // Sensor LS-A on I2C_1
 // Min and Max values from the MinMaxScaler
 // Replace these values with the actual min and max values from your scaler
 float data_min[NUM_FEATURES] = {
-  0.0,          // proximity_min
-  0.0,          // ambient_min
-  0.0,          // red_LSB_min
-  // ... continue for all features
+122,    431,   1246,    920,    380,   2007,   2687,    231.55,  895,
+  640,    269,   1651,   2546,    161.08,
 };
 
 float data_max[NUM_FEATURES] = {
-  65535.0,      // proximity_max
-  1000.0,       // ambient_max (replace with actual max value)
-  65535.0,      // red_LSB_max
-  // ... continue for all features
+152,    4100,   14696,   13907,    8277,   20945,    4889,    3500.11,
+ 11081,   10318,    5879,   18071,    4591,    2596.83,
 };
 
 
 void setup() {
+
+     pinMode(distLED, OUTPUT);
+  digitalWrite(distLED, LOW);
+
+  
   Serial.begin(115200);
 
   // Initialize I2C buses
@@ -65,13 +67,49 @@ void setup() {
   // Adding delay to ensure bus stability
   delay(500);
 
-  // Initialize sensors...
-  // [Same as before]
+ // Initialize VCNL4040 sensor on I2C_0
+  Serial.println("Initializing VCNL4040 (U1) sensor...");
+  if (!vcnl4040.begin(VCNL4040_I2CADDR_DEFAULT, &I2C_0)) {
+    Serial.println("Failed to initialize VCNL4040 (U1) sensor! Please check your wiring.");
+    while (1);
+  }
+  Serial.println("VCNL4040 (U1) initialized!");
+
+  // Initialize VEML6040 sensor LS-B on I2C_0
+  Serial.println("Initializing VEML6040 (LS-B) sensor...");
+  if (!veml6040_LSB.begin()) {
+    Serial.println("Failed to initialize VEML6040 (LS-B) sensor! Please check your wiring.");
+    while (1);
+  }
+  Serial.println("VEML6040 (LS-B) initialized!");
+
+  // Set configuration for LS-B
+  veml6040_LSB.setConfiguration(VEML6040_IT_40MS | VEML6040_TRIG_DISABLE | VEML6040_AF_AUTO | VEML6040_SD_ENABLE);
+
+  // Initialize VEML6040 sensor LS-A on I2C_1
+  Serial.println("Initializing VEML6040 (LS-A) sensor...");
+  if (!veml6040_LSA.begin()) {
+    Serial.println("Failed to initialize VEML6040 (LS-A) sensor! Please check your wiring.");
+    while (1);
+  }
+  Serial.println("VEML6040 (LS-A) initialized!");
+
+  // Set configuration for LS-A
+  veml6040_LSA.setConfiguration(VEML6040_IT_40MS | VEML6040_TRIG_DISABLE | VEML6040_AF_AUTO | VEML6040_SD_ENABLE);
+
+  // Set up PWM for Cool White and Warm White LEDs using updated ledc functions
+  ledcAttach(pinCW, pwmFreq, pwmResolution);
+  ledcAttach(pinWW, pwmFreq, pwmResolution);
+
+
 
   // Initialize the TensorFlow Lite model
   Serial.println("Initializing TensorFlow Lite model...");
   registerNetworkOps(tf);
-
+  
+  delay(3000);
+  Serial.println("__TENSORFLOW ESP32 RGBW CONTROL__");
+  
   // Configure input/output sizes
   tf.setNumInputs(TF_NUM_INPUTS);
   tf.setNumOutputs(TF_NUM_OUTPUTS);
@@ -83,6 +121,7 @@ void setup() {
   while (!tf.begin(tfModel).isOk()) {
     Serial.println(tf.exception.toString());
     delay(1000);  // Retry every second
+    Serial.println("TensorFlow Lite model initialization failed!");
   }
   Serial.println("TensorFlow Lite model initialized!");
 }

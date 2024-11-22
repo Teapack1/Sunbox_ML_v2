@@ -1,31 +1,5 @@
-/*
-
-The MIT License (MIT)
-
-Copyright (c) 2015 thewknd
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-*/
-
-#ifndef VEML6040_H
-#define VEML6040_H
+#ifndef VEML6040_SUNBOX_H
+#define VEML6040_SUNBOX_H
 
 #include <Wire.h>
 #include <math.h>
@@ -65,14 +39,14 @@ SOFTWARE.
 #define VEML6040_GSENS_640MS   0.01573
 #define VEML6040_GSENS_1280MS  0.007865
 
-class VEML6040 {
+class VEML6040_Sunbox {
   private:
     uint16_t read(uint8_t);
     uint8_t lastConfiguration;
     TwoWire *_wire;  // Added to specify I2C bus
 
   public:
-    VEML6040(TwoWire *wire = &Wire);  // Modified constructor
+    VEML6040_Sunbox(TwoWire *wire = &Wire);  // Modified constructor
     bool begin(void);
     void setConfiguration(uint8_t);
     uint16_t getRed(void);
